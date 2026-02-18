@@ -1,0 +1,49 @@
+# 环境与密钥
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# 日志与运行时
+*.log
+service.log
+
+# 本地数据库
+*.db
+*.db-shm
+*.db-wal
+
+# 本地/生成数据（按需放开）
+data.json
+cherry_providers.json
+
+# 备份与临时
+*.bak
+*.tmp
+*.swp
+*~
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 测试与覆盖率
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/

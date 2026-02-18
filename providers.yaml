@@ -1,0 +1,47 @@
+# ULRDS Provider Configuration
+# Each provider represents an LLM API endpoint that the scheduler can dispatch tasks to.
+#
+# Fields:
+#   provider_id:     Unique identifier
+#   base_url:        API base URL (OpenAI-compatible, must support /chat/completions)
+#   api_key:         API key for authentication
+#   model_name:      Model name to use in requests
+#   max_level:       Maximum task level this provider can handle (1-5)
+#   preferred_level: The level this provider is best suited for (used for matching priority)
+#   rpm_limit:       Max requests per minute (0 = unlimited)
+#   max_concurrent:  Max concurrent requests
+#   timeout_seconds: Per-request timeout
+
+providers:
+  # Example: OpenAI-compatible high-end API
+  # - provider_id: "gpt4o-main"
+  #   base_url: "https://api.openai.com/v1"
+  #   api_key: "sk-your-key-here"
+  #   model_name: "gpt-4o"
+  #   max_level: 5
+  #   preferred_level: 5
+  #   rpm_limit: 10
+  #   max_concurrent: 3
+  #   timeout_seconds: 120
+
+  # Example: Local 32B model via Ollama/vLLM
+  # - provider_id: "local-qwen-32b"
+  #   base_url: "http://localhost:8080/v1"
+  #   api_key: "not-needed"
+  #   model_name: "qwen2.5-32b"
+  #   max_level: 3
+  #   preferred_level: 3
+  #   rpm_limit: 0
+  #   max_concurrent: 1
+  #   timeout_seconds: 300
+
+  # Example: Free-tier API (rate-limited)
+  # - provider_id: "free-api-1"
+  #   base_url: "https://free-llm-proxy.example.com/v1"
+  #   api_key: "free-key-123"
+  #   model_name: "gpt-3.5-turbo"
+  #   max_level: 2
+  #   preferred_level: 2
+  #   rpm_limit: 3
+  #   max_concurrent: 1
+  #   timeout_seconds: 60
