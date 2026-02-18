@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLMBalancer — Provider 配置</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+    .tf { transition: all 0.15s ease; }
+    .selected-prov { background: #eef2ff !important; border-color: #c7d2fe !important; }
+  </style>
+</head>
+<body class="bg-slate-50 h-screen flex flex-col overflow-hidden text-slate-900 antialiased text-sm">
+
+  <!-- Auth Modal -->
+  <div id="authModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+      <div class="px-6 pt-6 pb-2 text-center">
+        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg mx-auto mb-4">
+          <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+        </div>
+        <div class="font-bold text-slate-800 text-lg">LLMBalancer</div>
+        <div class="text-xs text-slate-400 mt-0.5 mb-5">请输入访问令牌以继续</div>
+      </div>
+      <div class="px-6 pb-6">
+        <div class="relative mb-3">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+          </svg>
+          <input type="password" id="loginToken"
+            class="w-full border border-slate-200 rounded-xl pl-10 pr-10 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent bg-slate-50 tf"
+            placeholder="输入 Auth Token" />
+          <button type="button" onclick="toggleVis('loginToken')"
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 tf">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+          </button>
+        </div>
+        <div id="loginError" class="hidden text-xs text-red-500 mb-2 text-center"></div>
+        <button id="loginBtn" onclick="submitLogin()"
+          class="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 tf font-semibold text-sm">
+          进入管理界面
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between flex-shrink-0">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-sm">
+        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+      </div>
+      <div class="leading-tight">
+        <div class="font-semibold text-slate-800">LLMBalancer</div>
+        <div class="text-xs text-slate-400">Provider 配置</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1.5 text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+        已认证
+      </div>
+      <button onclick="logout()"
+        class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 tf">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+        </svg>
+        切换 Token
+      </button>
+      <button onclick="fetchProviders()"
+        class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 tf">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        刷新
+      </button>
+      <button onclick="exportProviders()"
+        class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 tf">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+        </svg>
+        导出 YAML
+      </button>
+      <a href="/docs" target="_blank"
+        class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 tf">
+        API 文档
+      </a>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- Left sidebar: provider list -->
+    <aside class="w-56 bg-white border-r border-slate-100 flex flex-col flex-shrink-0">
+      <div class="p-3 space-y-1.5 border-b border-slate-100">
+        <button onclick="showAddProviderPanel()"
+          class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 tf text-xs font-semibold shadow-sm">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+          </svg>
+          添加 Provider
+        </button>
+        <button onclick="showImportModal()"
+          class="w-full flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 tf text-xs">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+          导入配置
+        </button>
+      </div>
+      <div id="providerList" class="flex-1 overflow-y-auto p-2"></div>
+      <div id="statsBar" class="px-3 py-2 border-t border-slate-100 text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap"></div>
+    </aside>
+
+    <!-- Right panel -->
+    <main class="flex-1 overflow-y-auto">
+      <div id="emptyState" class="flex flex-col items-center justify-center h-full text-center px-8">
+        <div class="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
+          <svg class="w-8 h-8 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/>
+          </svg>
+        </div>
+        <p class="text-slate-500 font-medium">选择一个 Provider</p>
+        <p class="text-slate-400 text-xs mt-1">或点击「添加 Provider」新建连接</p>
+      </div>
+      <div id="mainPanel" class="hidden p-6 max-w-3xl"></div>
+    </main>
+  </div>
+
+  <!-- Import Modal -->
+  <div id="importModal" class="hidden fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl flex flex-col overflow-hidden" style="max-height:82vh">
+      <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div>
+          <div class="font-semibold text-slate-800">导入 Provider 配置</div>
+          <div class="text-xs text-slate-400 mt-0.5">支持新格式（models 列表）或旧格式（model_name 字段）</div>
+        </div>
+        <button onclick="closeImportModal()" class="text-slate-300 hover:text-slate-500 tf">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="p-5 flex-1 overflow-hidden flex flex-col">
+        <textarea id="importContent"
+          class="flex-1 min-h-60 border border-slate-200 rounded-xl p-4 font-mono text-xs resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent bg-slate-50 leading-relaxed"
+          placeholder="providers:&#10;  - provider_id: openai&#10;    base_url: https://api.openai.com/v1&#10;    api_key: sk-...&#10;    models:&#10;      - model_name: gpt-4o&#10;        level: 5&#10;        rpm_limit: 60&#10;        max_concurrent: 5&#10;      - model_name: gpt-4o-mini&#10;        level: 2&#10;        rpm_limit: 200&#10;        max_concurrent: 10"></textarea>
+      </div>
+      <div class="px-5 py-4 border-t border-slate-100 flex gap-2">
+        <button onclick="doImport()"
+          class="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 tf font-medium">
+          开始导入
+        </button>
+        <button onclick="closeImportModal()"
+          class="px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 tf">
+          取消
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="hidden fixed bottom-5 right-5 z-50">
+    <div id="toastInner" class="px-4 py-2.5 rounded-xl shadow-xl text-xs text-white min-w-48"></div>
+  </div>
+
+  <script>
+    // ── State ────────────────────────────────────────────────────
+    let providers = [];
+    let selectedPid = null;
+    let toastTimer = null;
+    let authToken = '';
+    let isEditing = false; // 有表单打开时为 true，轮询期间跳过主面板重渲染
+
+    const TOKEN_KEY = 'ulrds_token';
+
+    const STATUS = {
+      ACTIVE:   { dot: '#22c55e', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+      COOLDOWN: { dot: '#f59e0b', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+      DISABLED: { dot: '#ef4444', badge: 'bg-red-50 text-red-700 border-red-200' },
+    };
+
+    // ── Utils ────────────────────────────────────────────────────
+    function esc(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function getH() {
+      return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` };
+    }
+
+    // ── Auth ──────────────────────────────────────────────────────
+    async function submitLogin() {
+      const token = document.getElementById('loginToken').value.trim();
+      if (!token) {
+        showLoginError('请输入 Auth Token');
+        return;
+      }
+      const btn = document.getElementById('loginBtn');
+      btn.disabled = true;
+      btn.textContent = '验证中...';
+      try {
+        const res = await fetch('/config/providers', {
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+        });
+        if (res.status === 401 || res.status === 403) {
+          showLoginError('Token 不正确，请重新输入');
+          btn.disabled = false;
+          btn.textContent = '进入管理界面';
+          return;
+        }
+        if (!res.ok) {
+          showLoginError(`服务器错误 (${res.status})`);
+          btn.disabled = false;
+          btn.textContent = '进入管理界面';
+          return;
+        }
+        // Success
+        authToken = token;
+        localStorage.setItem(TOKEN_KEY, token);
+        providers = await res.json();
+        document.getElementById('authModal').classList.add('hidden');
+        renderSidebar();
+        updateStats();
+        startPolling();
+      } catch(e) {
+        showLoginError('连接失败: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = '进入管理界面';
+      }
+    }
+
+    function showLoginError(msg) {
+      const el = document.getElementById('loginError');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+
+    function logout() {
+      authToken = '';
+      localStorage.removeItem(TOKEN_KEY);
+      document.getElementById('loginToken').value = '';
+      document.getElementById('loginError').classList.add('hidden');
+      document.getElementById('loginBtn').disabled = false;
+      document.getElementById('loginBtn').textContent = '进入管理界面';
+      document.getElementById('authModal').classList.remove('hidden');
+    }
+
+    function startPolling() {
+      // 不轮询，按需手动刷新
+    }
+    function showToast(msg, type='info') {
+      const colors = { success:'bg-emerald-600', error:'bg-red-500', info:'bg-slate-800' };
+      document.getElementById('toastInner').className = `${colors[type]||colors.info} px-4 py-2.5 rounded-xl shadow-xl text-xs text-white`;
+      document.getElementById('toastInner').textContent = msg;
+      document.getElementById('toast').classList.remove('hidden');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => document.getElementById('toast').classList.add('hidden'), 3000);
+    }
+
+    // ── Data ─────────────────────────────────────────────────────
+    async function fetchProviders() {
+      try {
+        const res = await fetch('/config/providers', { headers: getH() });
+        if (res.status === 401 || res.status === 403) {
+          logout();
+          return;
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        providers = await res.json();
+        renderSidebar();
+        updateStats();
+        // 有表单正在编辑时，跳过主面板重渲染，避免表单被覆盖
+        if (!isEditing && selectedPid) {
+          const p = providers.find(p => p.provider_id === selectedPid);
+          if (p) renderMainPanel(p);
+        }
+      } catch(e) { console.error(e); }
+    }
+
+    // ── Sidebar ──────────────────────────────────────────────────
+    function renderSidebar() {
+      const el = document.getElementById('providerList');
+      if (!providers.length) {
+        el.innerHTML = `<div class="text-center py-10 text-slate-400 text-xs">暂无 Provider<br>点击上方「添加」</div>`;
+        return;
+      }
+      el.innerHTML = providers.map(p => {
+        const models = p.models || [];
+        // Provider status = best model status
+        const hasActive = models.some(m => m.runtime_status === 'ACTIVE');
+        const hasCooldown = models.some(m => m.runtime_status === 'COOLDOWN');
+        const dot = models.length === 0 ? '#94a3b8' : hasActive ? '#22c55e' : hasCooldown ? '#f59e0b' : '#ef4444';
+        const isSelected = p.provider_id === selectedPid;
+        return `<div class="flex items-center gap-2 px-2.5 py-2.5 rounded-lg cursor-pointer mb-0.5 border tf
+          ${isSelected ? 'selected-prov border-indigo-100' : 'border-transparent hover:bg-slate-50'}"
+          onclick="selectProvider('${esc(p.provider_id)}')">
+          <div class="w-2 h-2 rounded-full flex-shrink-0" style="background:${dot}"></div>
+          <div class="flex-1 min-w-0">
+            <div class="font-medium text-slate-800 truncate text-xs">${esc(p.provider_id)}</div>
+            <div class="text-[11px] text-slate-400">${models.length} 个模型</div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function updateStats() {
+      const allModels = providers.flatMap(p => p.models || []);
+      const a = allModels.filter(m => m.runtime_status === 'ACTIVE').length;
+      const c = allModels.filter(m => m.runtime_status === 'COOLDOWN').length;
+      const d = allModels.filter(m => m.runtime_status === 'DISABLED').length;
+      document.getElementById('statsBar').innerHTML = `
+        <span class="text-emerald-500">●</span> ${a} 活跃
+        ${c ? `<span class="text-amber-400">●</span> ${c} 冷却` : ''}
+        ${d ? `<span class="text-red-400">●</span> ${d} 禁用` : ''}
+      `;
+    }
+
+    // ── Main panel: select provider ───────────────────────────────
+    function selectProvider(pid) {
+      selectedPid = pid;
+      renderSidebar();
+      const p = providers.find(p => p.provider_id === pid);
+      if (p) renderMainPanel(p);
+    }
+
+    function renderMainPanel(p) {
+      document.getElementById('emptyState').classList.add('hidden');
+      const panel = document.getElementById('mainPanel');
+      panel.classList.remove('hidden');
+      panel.innerHTML = `
+        <!-- Provider info section -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-5 mb-4">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <div class="font-semibold text-slate-800 text-base">${esc(p.provider_id)}</div>
+              <div class="text-xs text-slate-400 mt-0.5">连接配置</div>
+            </div>
+            <button onclick="deleteProvider('${esc(p.provider_id)}')"
+              class="text-xs text-red-400 hover:text-red-600 border border-red-100 hover:border-red-200 px-3 py-1.5 rounded-lg tf hover:bg-red-50">
+              删除 Provider
+            </button>
+          </div>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Base URL</label>
+              <input type="text" id="p_url" value="${esc(p.base_url)}"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent bg-white tf"
+                placeholder="https://api.openai.com/v1" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">API Key</label>
+              <div class="relative">
+                <input type="password" id="p_key" value="${esc(p.api_key)}"
+                  class="w-full border border-slate-200 rounded-xl px-3 py-2 pr-10 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent bg-white tf"
+                  placeholder="sk-..." />
+                <button type="button" onclick="toggleVis('p_key')"
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 tf">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">备注（可选）</label>
+              <input type="text" id="p_notes" value="${esc(p.notes || '')}"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent bg-white tf"
+                placeholder="描述这个 Provider..." />
+            </div>
+          </div>
+          <button onclick="saveProviderConnection('${esc(p.provider_id)}')"
+            class="mt-4 w-full px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 tf font-medium">
+            保存连接配置
+          </button>
+        </div>
+
+        <!-- Models section -->
+        <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+          <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+            <div class="font-medium text-slate-700">模型列表</div>
+            <button onclick="showAddModelForm('${esc(p.provider_id)}')"
+              class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 tf">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+              </svg>
+              添加模型
+            </button>
+          </div>
+
+          ${(p.models || []).length === 0 ? `
+            <div class="py-10 text-center text-slate-400 text-xs">
+              暂无模型，点击右上角「添加模型」
+            </div>
+          ` : `
+            <div class="divide-y divide-slate-50">
+              ${(p.models || []).map(m => renderModelRow(p.provider_id, m)).join('')}
+            </div>
+          `}
+
+          <!-- Add model form placeholder -->
+          <div id="addModelForm_${esc(p.provider_id)}" class="hidden border-t border-slate-100"></div>
+        </div>
+      `;
+    }
+
+    function renderModelRow(pid, m) {
+      const sc = STATUS[m.runtime_status] || { dot: '#94a3b8', badge: 'bg-slate-50 text-slate-500 border-slate-200' };
+      return `
+        <div id="modelRow_${esc(pid)}_${esc(m.model_name)}" class="px-5 py-3.5">
+          <!-- View mode -->
+          <div id="modelView_${esc(pid)}_${esc(m.model_name)}" class="flex items-center gap-3">
+            <div class="w-2 h-2 rounded-full flex-shrink-0" style="background:${sc.dot}"></div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-slate-800">${esc(m.model_name)}</span>
+                <span class="px-1.5 py-0.5 text-[10px] font-medium rounded-full border ${sc.badge}">${m.runtime_status}</span>
+                ${m.current_concurrent > 0 ? `<span class="text-[10px] text-indigo-400 font-mono">${m.current_concurrent}×</span>` : ''}
+              </div>
+              <div class="flex items-center gap-3 mt-0.5 text-[11px] text-slate-400">
+                <span>Lv.${m.level}</span>
+                <span>RPM: ${m.rpm_limit || '∞'}</span>
+                <span>并发: ${m.max_concurrent}</span>
+                <span>超时: ${m.timeout_seconds}s</span>
+              </div>
+              ${m.disabled_reason ? `<div class="text-[11px] text-red-500 mt-0.5">${esc(m.disabled_reason)}</div>` : ''}
+            </div>
+            <div class="flex items-center gap-1.5 flex-shrink-0">
+              ${m.runtime_status !== 'ACTIVE' ? `
+                <button onclick="resetModel('${esc(pid)}','${esc(m.model_name)}')"
+                  class="text-[11px] text-slate-400 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 px-2 py-1 rounded-lg tf">
+                  重置
+                </button>` : ''}
+              <button onclick="showEditModelForm('${esc(pid)}','${esc(m.model_name)}')"
+                class="text-[11px] text-slate-400 hover:text-slate-700 border border-slate-200 px-2 py-1 rounded-lg tf">
+                编辑
+              </button>
+              <button onclick="deleteModel('${esc(pid)}','${esc(m.model_name)}')"
+                class="text-[11px] text-red-400 hover:text-red-600 border border-red-100 hover:border-red-200 px-2 py-1 rounded-lg tf">
+                删除
+              </button>
+            </div>
+          </div>
+          <!-- Edit mode (hidden by default) -->
+          <div id="modelEdit_${esc(pid)}_${esc(m.model_name)}" class="hidden">
+            ${modelFormHtml(pid, m.model_name, m, false)}
+          </div>
+        </div>
+      `;
+    }
+
+    function modelFormHtml(pid, modelName, defaults, isAdd) {
+      const d = defaults || {};
+      return `
+        <div class="bg-slate-50 rounded-xl p-4 mt-2 space-y-3">
+          ${isAdd ? `
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">模型名称 <span class="text-red-400">*</span></label>
+              <input type="text" id="mf_name_${esc(pid)}"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent bg-white tf"
+                placeholder="gpt-4o" />
+            </div>
+          ` : `<div class="text-xs font-semibold text-slate-600 mb-1">编辑模型: ${esc(modelName)}</div>`}
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">能力等级 <span class="text-slate-400 font-normal">task.level ≤ 此值</span></label>
+              <input type="number" id="mf_level_${esc(pid)}_${esc(isAdd ? '_new' : modelName)}" value="${d.level ?? 1}" min="1" max="99"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white tf" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">RPM 限制 <span class="text-slate-400 font-normal">0=不限</span></label>
+              <input type="number" id="mf_rpm_${esc(pid)}_${esc(isAdd ? '_new' : modelName)}" value="${d.rpm_limit ?? 0}" min="0"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white tf" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">最大并发数</label>
+              <input type="number" id="mf_concurrent_${esc(pid)}_${esc(isAdd ? '_new' : modelName)}" value="${d.max_concurrent ?? 1}" min="1"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white tf" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">超时（秒）</label>
+              <input type="number" id="mf_timeout_${esc(pid)}_${esc(isAdd ? '_new' : modelName)}" value="${d.timeout_seconds ?? 120}" min="5"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white tf" />
+            </div>
+          </div>
+          <div class="flex gap-2 pt-1">
+            <button onclick="${isAdd ? `submitAddModel('${esc(pid)}')` : `submitEditModel('${esc(pid)}','${esc(modelName)}')`}"
+              class="flex-1 px-3 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 tf font-medium text-xs">
+              ${isAdd ? '添加' : '保存'}
+            </button>
+            <button onclick="${isAdd ? `hideAddModelForm('${esc(pid)}')` : `hideEditModelForm('${esc(pid)}','${esc(modelName)}')`}"
+              class="px-3 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-100 tf text-xs">
+              取消
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function getModelFormData(pid, suffix) {
+      const g = id => document.getElementById(id)?.value;
+      return {
+        level: parseInt(g(`mf_level_${pid}_${suffix}`)) || 1,
+        rpm_limit: parseInt(g(`mf_rpm_${pid}_${suffix}`)) || 0,
+        max_concurrent: parseInt(g(`mf_concurrent_${pid}_${suffix}`)) || 1,
+        timeout_seconds: parseInt(g(`mf_timeout_${pid}_${suffix}`)) || 120,
+      };
+    }
+
+    // ── Add provider flow ─────────────────────────────────────────
+    function showAddProviderPanel() {
+      selectedPid = null;
+      renderSidebar();
+      document.getElementById('emptyState').classList.add('hidden');
+      const panel = document.getElementById('mainPanel');
+      panel.classList.remove('hidden');
+      panel.innerHTML = `
+        <div class="bg-white rounded-2xl border border-slate-200 p-5 max-w-lg">
+          <div class="font-semibold text-slate-800 text-base mb-4">新建 Provider</div>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Provider ID <span class="text-red-400">*</span></label>
+              <input type="text" id="np_id"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white tf"
+                placeholder="openai" />
+              <p class="text-[11px] text-slate-400 mt-1">唯一标识符，创建后不可修改（建议简短，如 openai、alicloud）</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Base URL <span class="text-red-400">*</span></label>
+              <input type="text" id="np_url"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white tf"
+                placeholder="https://api.openai.com/v1" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">API Key <span class="text-red-400">*</span></label>
+              <div class="relative">
+                <input type="password" id="np_key"
+                  class="w-full border border-slate-200 rounded-xl px-3 py-2 pr-10 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white tf"
+                  placeholder="sk-..." />
+                <button type="button" onclick="toggleVis('np_key')"
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 tf">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">备注</label>
+              <input type="text" id="np_notes"
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white tf"
+                placeholder="可选描述..." />
+            </div>
+          </div>
+          <div class="flex gap-2 mt-5">
+            <button onclick="createProvider()"
+              class="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 tf font-semibold">
+              创建 Provider
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    async function createProvider() {
+      const pid   = document.getElementById('np_id').value.trim();
+      const url   = document.getElementById('np_url').value.trim();
+      const key   = document.getElementById('np_key').value.trim();
+      const notes = document.getElementById('np_notes').value.trim();
+      if (!pid || !url || !key) { showToast('请填写所有必填字段', 'error'); return; }
+      try {
+        const res = await fetch('/config/providers', {
+          method: 'POST', headers: getH(),
+          body: JSON.stringify({ provider_id: pid, base_url: url, api_key: key, notes }),
+        });
+        if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail||`HTTP ${res.status}`); }
+        showToast('✓ Provider 创建成功，请继续添加模型', 'success');
+        await fetchProviders();
+        selectProvider(pid);
+      } catch(e) { showToast('创建失败: '+e.message, 'error'); }
+    }
+
+    async function saveProviderConnection(pid) {
+      const url   = document.getElementById('p_url').value.trim();
+      const key   = document.getElementById('p_key').value.trim();
+      const notes = document.getElementById('p_notes').value.trim();
+      if (!url) { showToast('Base URL 不能为空', 'error'); return; }
+      try {
+        const res = await fetch(`/config/providers/${encodeURIComponent(pid)}`, {
+          method: 'PUT', headers: getH(),
+          body: JSON.stringify({ provider_id: pid, base_url: url, api_key: key, notes }),
+        });
+        if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail||`HTTP ${res.status}`); }
+        showToast('✓ 连接配置已更新', 'success');
+        await fetchProviders();
+      } catch(e) { showToast('保存失败: '+e.message, 'error'); }
+    }
+
+    async function deleteProvider(pid) {
+      const p = providers.find(p => p.provider_id === pid);
+      const modelCount = (p?.models || []).length;
+      const warn = modelCount > 0 ? `\n将同时删除 ${modelCount} 个模型！` : '';
+      if (!confirm(`确认删除 Provider「${pid}」？${warn}\n此操作不可恢复。`)) return;
+      try {
+        const res = await fetch(`/config/providers/${encodeURIComponent(pid)}`, {
+          method: 'DELETE', headers: getH(),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        showToast('Provider 已删除', 'success');
+        selectedPid = null;
+        await fetchProviders();
+        document.getElementById('emptyState').classList.remove('hidden');
+        document.getElementById('mainPanel').classList.add('hidden');
+      } catch(e) { showToast('删除失败: '+e.message, 'error'); }
+    }
+
+    // ── Model form helpers ────────────────────────────────────────
+    function showAddModelForm(pid) {
+      const el = document.getElementById(`addModelForm_${pid}`);
+      if (!el) return;
+      isEditing = true;
+      el.innerHTML = `<div class="px-5 py-4">${modelFormHtml(pid, null, {}, true)}</div>`;
+      el.classList.remove('hidden');
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function hideAddModelForm(pid) {
+      const el = document.getElementById(`addModelForm_${pid}`);
+      if (el) { el.innerHTML = ''; el.classList.add('hidden'); }
+      isEditing = false;
+    }
+
+    async function submitAddModel(pid) {
+      const name = document.getElementById(`mf_name_${pid}`)?.value.trim();
+      if (!name) { showToast('请填写模型名称', 'error'); return; }
+      const data = { model_name: name, ...getModelFormData(pid, '_new') };
+      try {
+        const res = await fetch(`/config/providers/${encodeURIComponent(pid)}/models`, {
+          method: 'POST', headers: getH(), body: JSON.stringify(data),
+        });
+        if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail||`HTTP ${res.status}`); }
+        isEditing = false;
+        showToast(`✓ 模型 ${name} 已添加`, 'success');
+        await fetchProviders();
+        selectProvider(pid);
+      } catch(e) { showToast('添加失败: '+e.message, 'error'); }
+    }
+
+    function showEditModelForm(pid, modelName) {
+      isEditing = true;
+      document.getElementById(`modelView_${pid}_${modelName}`)?.classList.add('hidden');
+      document.getElementById(`modelEdit_${pid}_${modelName}`)?.classList.remove('hidden');
+    }
+
+    function hideEditModelForm(pid, modelName) {
+      document.getElementById(`modelView_${pid}_${modelName}`)?.classList.remove('hidden');
+      document.getElementById(`modelEdit_${pid}_${modelName}`)?.classList.add('hidden');
+      isEditing = false;
+    }
+
+    async function submitEditModel(pid, modelName) {
+      const data = { model_name: modelName, ...getModelFormData(pid, modelName) };
+      try {
+        const res = await fetch(`/config/providers/${encodeURIComponent(pid)}/models/${encodeURIComponent(modelName)}`, {
+          method: 'PUT', headers: getH(), body: JSON.stringify(data),
+        });
+        if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail||`HTTP ${res.status}`); }
+        isEditing = false;
+        showToast('✓ 模型配置已更新', 'success');
+        await fetchProviders();
+        selectProvider(pid);
+      } catch(e) { showToast('更新失败: '+e.message, 'error'); }
+    }
+
+    async function deleteModel(pid, modelName) {
+      if (!confirm(`确认删除模型「${modelName}」？`)) return;
+      try {
+        const res = await fetch(`/config/providers/${encodeURIComponent(pid)}/models/${encodeURIComponent(modelName)}`, {
+          method: 'DELETE', headers: getH(),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        showToast('模型已删除', 'success');
+        await fetchProviders();
+        selectProvider(pid);
+      } catch(e) { showToast('删除失败: '+e.message, 'error'); }
+    }
+
+    async function resetModel(pid, modelName) {
+      const runtimeId = `${pid}__${modelName}`;
+      try {
+        const res = await fetch(`/api/v1/providers/${encodeURIComponent(runtimeId)}/reset`, {
+          method: 'POST', headers: getH(),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        showToast('✓ 模型状态已重置', 'success');
+        await fetchProviders();
+        selectProvider(pid);
+      } catch(e) { showToast('重置失败: '+e.message, 'error'); }
+    }
+
+    // ── Import / Export ───────────────────────────────────────────
+    function showImportModal() {
+      document.getElementById('importModal').classList.remove('hidden');
+      document.getElementById('importContent').value = '';
+      setTimeout(() => document.getElementById('importContent').focus(), 80);
+    }
+    function closeImportModal() { document.getElementById('importModal').classList.add('hidden'); }
+
+    async function doImport() {
+      const content = document.getElementById('importContent').value.trim();
+      if (!content) { showToast('请输入配置内容', 'error'); return; }
+      try {
+        const res = await fetch('/config/import', {
+          method: 'POST', headers: getH(), body: JSON.stringify({ content }),
+        });
+        if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail||`HTTP ${res.status}`); }
+        const r = await res.json();
+        showToast(`✓ ${r.imported_providers} 个 Provider，${r.imported_models} 个模型`, 'success');
+        closeImportModal();
+        await fetchProviders();
+      } catch(e) { showToast('导入失败: '+e.message, 'error'); }
+    }
+
+    async function exportProviders() {
+      try {
+        const res = await fetch('/config/export', { headers: getH() });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([text], { type: 'text/yaml;charset=utf-8' }));
+        a.download = 'providers.yaml'; a.click();
+        showToast('✓ 配置已导出', 'success');
+      } catch(e) { showToast('导出失败: '+e.message, 'error'); }
+    }
+
+    function toggleVis(id) {
+      const el = document.getElementById(id);
+      if (el) el.type = el.type === 'password' ? 'text' : 'password';
+    }
+
+    // ── Init ──────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', async () => {
+      document.getElementById('importModal').addEventListener('click', e => {
+        if (e.target === e.currentTarget) closeImportModal();
+      });
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') closeImportModal();
+        if (e.key === 'Enter' && !document.getElementById('authModal').classList.contains('hidden')) {
+          submitLogin();
+        }
+      });
+
+      const saved = localStorage.getItem(TOKEN_KEY);
+      if (saved) {
+        // 自动验证缓存的 token
+        authToken = saved;
+        try {
+          const res = await fetch('/config/providers', { headers: getH() });
+          if (res.ok) {
+            providers = await res.json();
+            document.getElementById('authModal').classList.add('hidden');
+            renderSidebar();
+            updateStats();
+            startPolling();
+            return;
+          }
+          // token 失效，清空并弹出登录框
+          authToken = '';
+          localStorage.removeItem(TOKEN_KEY);
+        } catch(e) {
+          authToken = '';
+          localStorage.removeItem(TOKEN_KEY);
+        }
+      }
+      // 显示登录框
+      document.getElementById('authModal').classList.remove('hidden');
+      setTimeout(() => document.getElementById('loginToken').focus(), 100);
+    });
+  </script>
+</body>
+</html>

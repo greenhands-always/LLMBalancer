@@ -138,10 +138,117 @@ class ProviderManager:
         self._providers: dict[str, ProviderState] = {}
         self._on_provider_available = on_provider_available
 
+    def load_from_db_records(self, records: list[dict]) -> None:
+        """Load providers from flat DB records (providers JOIN provider_models).
+
+        Each record must include: provider_id, base_url, api_key, model_name,
+        level, rpm_limit, max_concurrent, timeout_seconds, status.
+        Runtime key = "{provider_id}__{model_name}".
+        """
+        for p in records:
+            raw_status = p.get("status", "ACTIVE")
+            try:
+                status = ProviderStatus(raw_status)
+            except ValueError:
+                status = ProviderStatus.ACTIVE
+            # Don't restore COOLDOWN on startup — treat as ACTIVE
+            if status == ProviderStatus.COOLDOWN:
+                status = ProviderStatus.ACTIVE
+
+            runtime_id = f"{p['provider_id']}__{p['model_name']}"
+            state = ProviderState(
+                provider_id=runtime_id,
+                base_url=p["base_url"],
+                api_key=p["api_key"],
+                model_name=p["model_name"],
+                level=int(p["level"]),
+                rpm_limit=int(p.get("rpm_limit", 0)),
+                max_concurrent=int(p.get("max_concurrent", 1)),
+                timeout_seconds=int(p.get("timeout_seconds", 120)),
+                status=status,
+                _on_release=self._on_provider_available,
+            )
+            self._providers[runtime_id] = state
+            logger.info(
+                "Loaded provider from DB: %s (model=%s, level=%d)",
+                runtime_id, p["model_name"], p["level"],
+            )
+
+    def add_provider(self, provider_id: str, model: dict, base_url: str, api_key: str) -> "ProviderState":
+        """Add a provider-model to the runtime pool.
+
+        Args:
+            provider_id: Base provider ID (e.g., "openai")
+            model: Model config dict with model_name, level, rpm_limit, etc.
+            base_url: Connection base URL
+            api_key: API key
+
+        Runtime key: "{provider_id}__{model_name}"
+        """
+        runtime_id = f"{provider_id}__{model['model_name']}"
+        state = ProviderState(
+            provider_id=runtime_id,
+            base_url=base_url,
+            api_key=api_key,
+            model_name=model["model_name"],
+            level=int(model.get("level", 1)),
+            rpm_limit=int(model.get("rpm_limit", 0)),
+            max_concurrent=int(model.get("max_concurrent", 1)),
+            timeout_seconds=int(model.get("timeout_seconds", 120)),
+            _on_release=self._on_provider_available,
+        )
+        self._providers[runtime_id] = state
+        logger.info("Added provider to runtime pool: %s", runtime_id)
+        return state
+
+    def remove_provider(self, runtime_id: str) -> bool:
+        """Remove a provider-model from the runtime pool by runtime key.
+
+        Accepts either a runtime key ("{provider_id}__{model_name}") or
+        a bare provider_id to remove all models under that provider.
+        """
+        if runtime_id in self._providers:
+            del self._providers[runtime_id]
+            logger.info("Removed provider from runtime pool: %s", runtime_id)
+            return True
+        # Try removing all models under a base provider_id
+        prefix = f"{runtime_id}__"
+        removed = [k for k in list(self._providers) if k.startswith(prefix)]
+        for k in removed:
+            del self._providers[k]
+            logger.info("Removed provider from runtime pool: %s", k)
+        return bool(removed)
+
+    def update_provider_model(
+        self, provider_id: str, model_name: str, updates: dict
+    ) -> bool:
+        """Update runtime fields of a provider-model. Returns False if not found."""
+        runtime_id = f"{provider_id}__{model_name}"
+        p = self._providers.get(runtime_id)
+        if p is None:
+            return False
+        for field in ("base_url", "api_key", "level", "rpm_limit",
+                      "max_concurrent", "timeout_seconds"):
+            if field in updates and updates[field] is not None:
+                setattr(p, field, updates[field])
+        logger.info("Updated provider in runtime pool: %s", runtime_id)
+        return True
+
+    def update_provider_connection(self, provider_id: str, base_url: str, api_key: str) -> None:
+        """Update base_url and api_key for all models of a provider."""
+        prefix = f"{provider_id}__"
+        for k, p in self._providers.items():
+            if k.startswith(prefix):
+                p.base_url = base_url
+                p.api_key = api_key
+        logger.info("Updated connection info for all models of: %s", provider_id)
+
     def load_from_yaml(self, path: str) -> None:
         """Load provider configurations from YAML file.
 
-        Supports both new format (level) and legacy format (max_level + preferred_level).
+        Supports two formats:
+        - New multi-model: providers[].models[] list
+        - Legacy flat:     providers[] with model_name field
         """
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
@@ -151,26 +258,49 @@ class ProviderManager:
             return
 
         for p in data.get("providers", []) or []:
-            # Support new `level` field or legacy `preferred_level`/`max_level`
-            level = p.get("level") or p.get("preferred_level") or p.get("max_level", 1)
-
-            state = ProviderState(
-                provider_id=p["provider_id"],
-                base_url=p["base_url"],
-                api_key=p["api_key"],
-                model_name=p["model_name"],
-                level=level,
-                rpm_limit=p.get("rpm_limit", 0),
-                max_concurrent=p.get("max_concurrent", 1),
-                timeout_seconds=p.get("timeout_seconds", 120),
-                _on_release=self._on_provider_available,
-            )
-            self._providers[state.provider_id] = state
-            logger.info(
-                "Loaded provider: %s (model=%s, level=%d, rpm=%d, concurrent=%d)",
-                state.provider_id, state.model_name,
-                state.level, state.rpm_limit, state.max_concurrent,
-            )
+            if "models" in p:
+                # New multi-model format
+                for m in p.get("models", []):
+                    runtime_id = f"{p['provider_id']}__{m['model_name']}"
+                    level = m.get("level", 1)
+                    state = ProviderState(
+                        provider_id=runtime_id,
+                        base_url=p["base_url"],
+                        api_key=p["api_key"],
+                        model_name=m["model_name"],
+                        level=int(level),
+                        rpm_limit=int(m.get("rpm_limit", 0)),
+                        max_concurrent=int(m.get("max_concurrent", 1)),
+                        timeout_seconds=int(m.get("timeout_seconds", 120)),
+                        _on_release=self._on_provider_available,
+                    )
+                    self._providers[runtime_id] = state
+                    logger.info(
+                        "Loaded provider: %s (model=%s, level=%d)",
+                        runtime_id, m["model_name"], level,
+                    )
+            else:
+                # Legacy flat format (model_name at top level)
+                level = p.get("level") or p.get("preferred_level") or p.get("max_level", 1)
+                model_name = p.get("model_name", "unknown")
+                # Keep old provider_id as runtime key for backward compat
+                runtime_id = p["provider_id"]
+                state = ProviderState(
+                    provider_id=runtime_id,
+                    base_url=p["base_url"],
+                    api_key=p["api_key"],
+                    model_name=model_name,
+                    level=int(level),
+                    rpm_limit=int(p.get("rpm_limit", 0)),
+                    max_concurrent=int(p.get("max_concurrent", 1)),
+                    timeout_seconds=int(p.get("timeout_seconds", 120)),
+                    _on_release=self._on_provider_available,
+                )
+                self._providers[runtime_id] = state
+                logger.info(
+                    "Loaded provider (legacy): %s (model=%s, level=%d)",
+                    runtime_id, model_name, level,
+                )
 
     def find_provider(
         self,

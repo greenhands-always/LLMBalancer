@@ -26,6 +26,10 @@ service.log
 data.json
 cherry_providers.json
 
+# 自定义 provider 配置（含真实 key，勿提交）
+cherry_providers.yaml
+*_providers.yaml
+
 # 备份与临时
 *.bak
 *.tmp

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.api.auth import verify_token
 from app.api.schemas import (
@@ -18,6 +21,13 @@ from app.db.database import get_db
 from app.db.models import create_task, get_task, get_task_logs
 
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(verify_token)])
+
+# 全局事件注册表：task_id → asyncio.Event
+# 当 Scheduler 完成任务（终态）时 set，SSE 生成器监听后推送结果
+_sync_events: dict[str, asyncio.Event] = {}
+
+_HEARTBEAT_INTERVAL = 5.0  # seconds
+_TERMINAL_STATUSES = {"COMPLETED", "FAILED", "TIMEOUT"}
 
 
 def _get_app_state():
@@ -72,6 +82,134 @@ async def submit_task(req: TaskSubmitRequest):
         status="QUEUED",
         message="Task submitted successfully",
     )
+
+
+@router.post("/task/sync")
+async def submit_task_sync(req: TaskSubmitRequest):
+    """Submit a task and wait for the result via SSE.
+
+    Returns a Server-Sent Events stream:
+    - Periodic ': heartbeat' comments keep proxies from closing the idle connection.
+    - A final 'data: {...}' event carries the task result (COMPLETED / FAILED / TIMEOUT).
+
+    If the connection drops, reconnect with GET /api/v1/task/{task_id}/wait.
+    """
+    import logging
+    import time
+    logger = logging.getLogger("ulrds.api")
+
+    state = _get_app_state()
+
+    task_id = str(uuid.uuid4())
+    task = {
+        "task_id": task_id,
+        "level": req.model_config_data.level,
+        "type": req.model_config_data.type,
+        "priority": req.priority,
+        "payload": req.payload,
+        "callback_url": req.callback_url,
+        "allow_downgrade": req.allow_downgrade,
+        "max_wait_seconds": req.max_wait_seconds,
+        "max_retries": 3,
+        "retry_count": 0,
+    }
+
+    async with get_db() as db:
+        await create_task(db, task)
+
+    task["created_at"] = time.time()
+    await state["queue"].push(task)
+    state["scheduler"].notify()
+
+    logger.info("Sync task submitted: task_id=%s level=%d", task_id, task["level"])
+
+    event = asyncio.Event()
+    _sync_events[task_id] = event
+
+    async def _sse_stream():
+        try:
+            while True:
+                try:
+                    await asyncio.wait_for(asyncio.shield(event.wait()), timeout=_HEARTBEAT_INTERVAL)
+                    break  # event was set → task reached terminal state
+                except asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+
+            async with get_db() as db:
+                row = await get_task(db, task_id)
+
+            payload = _build_sse_payload(row)
+            yield f"data: {json.dumps(payload)}\n\n"
+        finally:
+            _sync_events.pop(task_id, None)
+
+    return StreamingResponse(_sse_stream(), media_type="text/event-stream")
+
+
+@router.get("/task/{task_id}/wait")
+async def wait_for_task(task_id: str):
+    """Reconnect to an in-progress sync task and wait for its result via SSE.
+
+    Use this endpoint when the original POST /task/sync connection was dropped.
+    - If the task is already in a terminal state, the result is returned immediately.
+    - Otherwise, subscribes to the completion event and streams heartbeats until done.
+    - Returns 404 if the task does not exist.
+    """
+    async with get_db() as db:
+        row = await get_task(db, task_id)
+
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    async def _sse_stream():
+        # Task already finished — return immediately without registering an event
+        if row["status"] in _TERMINAL_STATUSES:
+            payload = _build_sse_payload(row)
+            yield f"data: {json.dumps(payload)}\n\n"
+            return
+
+        # Task still running — subscribe to (or create) the completion event
+        if task_id not in _sync_events:
+            _sync_events[task_id] = asyncio.Event()
+        event = _sync_events[task_id]
+
+        try:
+            while True:
+                try:
+                    await asyncio.wait_for(asyncio.shield(event.wait()), timeout=_HEARTBEAT_INTERVAL)
+                    break
+                except asyncio.TimeoutError:
+                    # Re-check DB in case scheduler signalled before we registered
+                    async with get_db() as db:
+                        current = await get_task(db, task_id)
+                    if current and current["status"] in _TERMINAL_STATUSES:
+                        row.update(current)
+                        break
+                    yield ": heartbeat\n\n"
+
+            async with get_db() as db:
+                final = await get_task(db, task_id)
+            payload = _build_sse_payload(final)
+            yield f"data: {json.dumps(payload)}\n\n"
+        finally:
+            # Only remove the event if we were the ones who created it
+            _sync_events.pop(task_id, None)
+
+    return StreamingResponse(_sse_stream(), media_type="text/event-stream")
+
+
+def _build_sse_payload(row: dict | None) -> dict:
+    """Build the JSON payload sent in the final SSE data event."""
+    if row is None:
+        return {"status": "UNKNOWN"}
+    return {
+        "task_id": row["task_id"],
+        "status": row["status"],
+        "result": row.get("result"),
+        "error_message": row.get("error_message"),
+        "used_provider_id": row.get("used_provider_id"),
+        "execution_time_ms": row.get("execution_time_ms"),
+    }
 
 
 @router.get("/task/{task_id}", response_model=TaskStatusResponse)

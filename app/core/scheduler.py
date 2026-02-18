@@ -211,6 +211,13 @@ class Scheduler:
             provider.release()
             # release() triggers _on_release → scheduler.notify() → wake up scheduler
 
+    def _notify_sync_waiter(self, task_id: str) -> None:
+        """Signal any SSE waiter for this task_id."""
+        from app.api.routes import _sync_events
+        event = _sync_events.get(task_id)
+        if event is not None:
+            event.set()
+
     async def _handle_success(self, task: dict, provider: ProviderState, result) -> None:
         """Handle successful LLM response."""
         task_id = task["task_id"]
@@ -233,6 +240,8 @@ class Scheduler:
             "Task completed: %s provider=%s time=%dms",
             task_id, provider.provider_id, result.execution_time_ms,
         )
+
+        self._notify_sync_waiter(task_id)
 
         if task.get("callback_url"):
             asyncio.create_task(
@@ -283,6 +292,8 @@ class Scheduler:
 
             logger.warning("Task failed (not retryable): %s — %s", task_id, classification.category.value)
 
+            self._notify_sync_waiter(task_id)
+
             if task.get("callback_url"):
                 asyncio.create_task(
                     deliver_callback(
@@ -307,6 +318,8 @@ class Scheduler:
             await add_task_log(db, task_id, "TIMEOUT", detail="Queue wait timeout")
 
         logger.warning("Task timed out in queue: %s", task_id)
+
+        self._notify_sync_waiter(task_id)
 
         if task.get("callback_url"):
             asyncio.create_task(
@@ -335,6 +348,8 @@ class Scheduler:
                 await add_task_log(db, task_id, "FAILED", detail=f"Max retries reached: {reason}")
 
             logger.warning("Task exhausted retries: %s (%d/%d)", task_id, retry_count, max_retries)
+
+            self._notify_sync_waiter(task_id)
 
             if task.get("callback_url"):
                 asyncio.create_task(
